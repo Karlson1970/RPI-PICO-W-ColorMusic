@@ -12,10 +12,10 @@
 #define PX1 62        // начальная координата вывода формы сигнала по x первый канал
 #define PX2 65        // начальная координата вывода формы сигнала по x второй канал
 #define PY1 16        // максимальное значение координаты по y для вывода формы сигнала
-#define SAMPLES 128
+#define SAMPLES 128   // количество семплов для FFT
 
 const uint8_t TitleBitmap [] PROGMEM = {
-	// 'TitleBitmap, 128x48px
+	// 'Заставка при первом включении, 128x48px
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -66,6 +66,10 @@ const uint8_t TitleBitmap [] PROGMEM = {
 	0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0xee, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77, 0x77
 };
 
+WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+arduinoFFT FFT = arduinoFFT(); // объявляем класс FFT 
+
 double vRealCh1[SAMPLES];
 double vImagCh1[SAMPLES];
 double vRealCh2[SAMPLES]; 
@@ -77,12 +81,104 @@ int16_t waveCh2[SAMPLES];
 const uint encoderPinA = 15;
 const uint encoderPinB = 14;
 int16_t encoderPos = 0;
+int8_t enccondition = 0;      //состояние энкодера 0 не было поворота ручки; 1 -поворот по часовой стрелке; -1 против часовой
+uint8_t ModeShowProg = 127;   //Режим работы программы 
+                              // 0 -126 - зарезервировано для режимов работы ленты без музыки. просто разные эффекты.
+                              // 127 - пятицветный режим работы. музыка кодируется пятью цветами и выводится на ленту (класическая цветомузыка)
+                              // 128 - режим когда музыка кодируется 30 цветов на канал.
+                              // 129 - режим работы когда на ленту выводится уровень сигнала.
+                              // 
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-WS2812FX ws2812fx = WS2812FX(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
-arduinoFFT FFT = arduinoFFT(); // объявляем класс FFT 
+// Функция рисует столбик на экране высотой заданой в x(номер столбца), y (0-100)
+void DrawColumnDisplay(uint8_t x, uint8_t y) {
+  y = map(y, 0, 100, 63, 15);    // Преобразуем входной параметр в высоту в пикселях
+  x = x * 4;
+  for (int i = 63; i > y; i--){
+    u8g2.drawLine(x, i, x + 2, i);
+  }   
+}
 
-// Диапазон ввода параметра h (0 ~ 360), s (0 ~ 100), v (0 ~ 100), 
+void showWaveform() {          // Показываем форму сигнала
+  for (int i = 0; i < 52; i++) {
+    u8g2.drawLine(PX2 + i, PY1 - (waveCh1[i * 2]) / 256, PX2 + i + 1, 16 - (waveCh1[i * 2 + 1] / 256)); // Первый канал
+    u8g2.drawLine(PX1 - i, PY1 - (waveCh2[i * 2]) / 256, PX1 - i - 1, 16 - (waveCh2[i * 2 + 1] / 256)); // Второй канал
+  }
+}
+
+void ClearDisplayRandom(){    //Очищаем экран разными способами (выбирается случайно)
+  uint8_t ModeClear = random(0,4);
+  switch (ModeClear){
+  case 0:
+    for (int i = 0; i < 128; i++){
+      u8g2.setDrawColor(1);
+      u8g2.drawLine(i, 0, i, 63);
+      u8g2.sendBuffer();
+      u8g2.setDrawColor(2);
+      u8g2.drawLine(i, 0, i, 63);
+    }
+  break;
+  case 1:
+    for (int i = 0; i < 64; i++){
+      u8g2.setDrawColor(1);
+      u8g2.drawLine(i, 0, i, 63);
+      u8g2.drawLine(127 - i, 0, 127 - i, 63);
+      u8g2.sendBuffer();
+      u8g2.setDrawColor(2);
+      u8g2.drawLine(i, 0, i, 63);
+      u8g2.drawLine(127 - i, 0, 127 - i, 63);
+    }
+  break;
+  case 2:
+    for (int i = 0; i < 64; i++){
+      u8g2.setDrawColor(1);
+      u8g2.drawLine(0, i, 127, i);
+      u8g2.sendBuffer();
+      u8g2.setDrawColor(2);
+      u8g2.drawLine(0, i, 127, i);
+    }
+  break;
+  case 3:
+     for (int i = 0; i < 32; i++){
+      u8g2.setDrawColor(1);
+      u8g2.drawLine(0, i, 127, i);
+      u8g2.drawLine(0, 63 - i, 127, 63 - i);
+      u8g2.sendBuffer();
+      u8g2.setDrawColor(2);
+      u8g2.drawLine(0, i, 127, i);
+      u8g2.drawLine(0, 63 - i, 127, 63 - i);
+    }
+  break;
+  }
+  u8g2.setDrawColor(1);
+}
+
+void encoderA() {
+  // Считываем значения с обоих пинов энкодера
+  int a = digitalRead(encoderPinA);
+  int b = digitalRead(encoderPinB);
+
+// По изменению состояния A или B пина
+// Определяем направление вращения энкодера
+  if (a == HIGH && b == LOW) {  
+    encoderPos++;
+    enccondition = 1;  
+  } 
+}
+
+void encoderB() {
+// Считываем значения с обоих пинов энкодера
+  int a = digitalRead(encoderPinA);
+  int b = digitalRead(encoderPinB);
+
+// По изменению состояния A или B пина
+// Определяем направление вращения энкодера
+  if (a == LOW && b == HIGH){
+    encoderPos--;
+    enccondition = -1;
+  }
+}
+
+// Диапазон ввода параметра h (0 ~ 360), s (0 ~ 100), v (0 ~ 100), выход - цвет RGB в 32-хбитном формате
 uint32_t hsv_to_rgb(int h,int s,int v)
 {
     float C = 0, X = 0, Y = 0, Z = 0, R =0, G = 0, B = 0;
@@ -116,22 +212,6 @@ uint32_t hsv_to_rgb(int h,int s,int v)
     return RGB32;
 }
 
-// Функция рисует столбик на экране высотой заданой в x(номер столбца), y (0-100)
-void DrawColumnDisplay(uint8_t x, uint8_t y) {
-  y = map(y, 0, 100, 63, 15);    // Преобразуем входной параметр в высоту в пикселях
-  x = x * 4;
-  for (int i = 63; i > y; i--){
-    u8g2.drawLine(x, i, x + 2, i);
-  }   
-}
-
-void showWaveform() {          // Показываем форму сигнала
-  for (int i = 0; i < 52; i++) {
-    u8g2.drawLine(PX2 + i, PY1 - (waveCh1[i * 2]) / 256, PX2 + i + 1, 16 - (waveCh1[i * 2 + 1] / 256)); // Первый канал
-    u8g2.drawLine(PX1 - i, PY1 - (waveCh2[i * 2]) / 256, PX1 - i - 1, 16 - (waveCh2[i * 2 + 1] / 256)); // Второй канал
-  }
-}
-
 void delay80ns(int t) {         // Функция задержки примерно t * 80ns = 400ns (0.4 us)
   volatile uint32_t x;          // Волатильная переменная для растягивания времени (объявлена volatile, чтобы оптимизатор ее не удалил)
   for (int i = 0; i < t; i++) {
@@ -159,36 +239,13 @@ void calculateFFT() {
   FFT.ComplexToMagnitude(vRealCh2, vImagCh2, SAMPLES);                // то же канал 2
 }
 
-void encoderA() {
-  // Считываем значения с обоих пинов энкодера
-  int a = digitalRead(encoderPinA);
-  int b = digitalRead(encoderPinB);
-
-// По изменению состояния A или B пина
-// Определяем направление вращения энкодера
-  if (a == HIGH && b == LOW) {  
-    encoderPos++;  
-  } 
-}
-
-void encoderB() {
-// Считываем значения с обоих пинов энкодера
-  int a = digitalRead(encoderPinA);
-  int b = digitalRead(encoderPinB);
-
-// По изменению состояния A или B пина
-// Определяем направление вращения энкодера
-  if (a == LOW && b == HIGH){
-    encoderPos--;
-  }
-}
-
 void setup() {
 // аппаратные прерывания от энкодера канал A и канал B
   pinMode(encoderPinA, INPUT);
   pinMode(encoderPinB, INPUT);
   attachInterrupt(digitalPinToInterrupt(encoderPinA), encoderA, RISING);
   attachInterrupt(digitalPinToInterrupt(encoderPinB), encoderB, RISING);
+  randomSeed(analogRead(27)); // сменим зерно рандомайзера
 //включаем внутренний датчик температуры
   //adc_init();
  // adc_set_temp_sensor_enabled(1);
@@ -212,14 +269,7 @@ void setup() {
   u8g2.drawBitmap(0, 16, 16, 48, TitleBitmap);
   u8g2.sendBuffer();
   delay(3000);
-  for (int i = 0; i < 128; i++){
-    u8g2.setDrawColor(1);
-    u8g2.drawLine(i, 0, i, 63);
-    u8g2.sendBuffer();
-    u8g2.setDrawColor(2);
-    u8g2.drawLine(i, 0, i, 63);
-  }
-  u8g2.setDrawColor(1);
+  ClearDisplayRandom();
 }
 
 void loop() {
@@ -254,7 +304,6 @@ void loop() {
         color_ch2 = hsv_to_rgb(RED_HSV, 100, amplch2);
         ws2812fx.setSegment(0, 0, 5, FX_MODE_STATIC, color_ch1, 30);
         ws2812fx.setSegment(1, 54, 59, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        
         break;
       }
       case 6:  {//2400гц
@@ -262,7 +311,6 @@ void loop() {
         color_ch2 = hsv_to_rgb(ORANGE_HSV, 100, amplch2);
         ws2812fx.setSegment(2, 6, 11, FX_MODE_STATIC, color_ch1, 30);
         ws2812fx.setSegment(3, 48, 53, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        
         break;
       }
       case 10:   {//4000гц
@@ -270,7 +318,6 @@ void loop() {
         color_ch2 = hsv_to_rgb(GREEN_HSV, 100, amplch2);
         ws2812fx.setSegment(4, 12, 17, FX_MODE_STATIC, color_ch1, 30);
         ws2812fx.setSegment(5, 42, 47, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        
         break;
       }
       case 16:    {//6400гц
@@ -278,7 +325,6 @@ void loop() {
         color_ch2 = hsv_to_rgb(BLUE_HSV, 100, amplch2);
         ws2812fx.setSegment(6, 18, 23, FX_MODE_STATIC, color_ch1, 30);
         ws2812fx.setSegment(7, 36, 41, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        
         break;
       }
       case 25:    {//10000гц
@@ -286,7 +332,6 @@ void loop() {
         color_ch2 = hsv_to_rgb(VIOLET_HSV, 100, amplch2);
         ws2812fx.setSegment(8, 24, 29, FX_MODE_STATIC, color_ch1, 30);
         ws2812fx.setSegment(9, 30, 35, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        
         break;
       }
    }  
