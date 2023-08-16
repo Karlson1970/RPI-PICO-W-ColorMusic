@@ -212,6 +212,88 @@ uint32_t hsv_to_rgb(int h,int s,int v)
     return RGB32;
 }
 
+//Выбор режима работы цветомузыки
+void Chance_ColorMusic(){
+  int amplch1 = 0;
+  int amplch2 = 0;
+  uint32_t color_ch1, color_ch2;
+  //проверяем все частоты от 800гц до 19600гц с шагом 400гц
+  // i = 0 постоянная составляющая
+  // i = 1 недостаточно хорошо определяется много шума
+  //итого 48 частот
+  for (int i = 2; i < 50; i++){
+    if (vRealCh1[i] > 200) {
+      vRealCh1[i] = vRealCh1[i] - 200;
+    } else vRealCh1[i] = 0; // Все что ниже 200 считем шумом и не учитываем в подсчетах
+    if (vRealCh2[i] > 200){
+      vRealCh2[i] = vRealCh2[i] - 200;
+    } else vRealCh2[i] = 0; // то же для второго канала
+    amplch1 = constrain(vRealCh1[i], 0, 17000);   //обрежем сигнал по амплитуде  до 17000 будем считать это максимумом
+    amplch2 = constrain(vRealCh2[i], 0, 17000);
+    amplch1 = map(amplch1, 0, 17000, 0, 100);     // переведем амплитуду в проценты яркости
+    amplch2 = map(amplch2, 0, 17000, 0, 100);
+    if ((i + 1) % 3 == 0){                        // Берем каждый третий элемент массива
+      uint8_t j = (i + 1) / 3 - 1;                // Находим знакоместо по x для вывода столбика
+      DrawColumnDisplay(j, amplch1);              // Создаем столбик для первого канала
+      DrawColumnDisplay(31-j, amplch2);         // Создаем столбик для второго канала
+    }
+    if (ModeShowProg == 127){
+      switch (i) {
+        case 2:  {// 800гц
+          color_ch1 = hsv_to_rgb(RED_HSV, 100, amplch1);
+          color_ch2 = hsv_to_rgb(RED_HSV, 100, amplch2);
+          ws2812fx.setSegment(0, 0, 5, FX_MODE_STATIC, color_ch1, 30);
+          ws2812fx.setSegment(1, 54, 59, FX_MODE_STATIC, color_ch2, 30,REVERSE);
+          break;
+        }
+        case 6:  {//2400гц
+          color_ch1 = hsv_to_rgb(ORANGE_HSV, 100, amplch1);
+          color_ch2 = hsv_to_rgb(ORANGE_HSV, 100, amplch2);
+          ws2812fx.setSegment(2, 6, 11, FX_MODE_STATIC, color_ch1, 30);
+          ws2812fx.setSegment(3, 48, 53, FX_MODE_STATIC, color_ch2, 30,REVERSE);
+          break;
+        }
+        case 10:   {//4000гц
+          color_ch1 = hsv_to_rgb(GREEN_HSV, 100, amplch1);
+          color_ch2 = hsv_to_rgb(GREEN_HSV, 100, amplch2);
+          ws2812fx.setSegment(4, 12, 17, FX_MODE_STATIC, color_ch1, 30);
+          ws2812fx.setSegment(5, 42, 47, FX_MODE_STATIC, color_ch2, 30,REVERSE);
+          break;
+        }
+        case 16:    {//6400гц
+          color_ch1 = hsv_to_rgb(BLUE_HSV, 100, amplch1);
+          color_ch2 = hsv_to_rgb(BLUE_HSV, 100, amplch2);
+          ws2812fx.setSegment(6, 18, 23, FX_MODE_STATIC, color_ch1, 30);
+          ws2812fx.setSegment(7, 36, 41, FX_MODE_STATIC, color_ch2, 30,REVERSE);
+          break;
+        }
+        case 25:    {//10000гц
+          color_ch1 = hsv_to_rgb(VIOLET_HSV, 100, amplch1);
+          color_ch2 = hsv_to_rgb(VIOLET_HSV, 100, amplch2);
+          ws2812fx.setSegment(8, 24, 29, FX_MODE_STATIC, color_ch1, 30);
+          ws2812fx.setSegment(9, 30, 35, FX_MODE_STATIC, color_ch2, 30,REVERSE);
+          break;
+        }
+      }
+    }
+    if (ModeShowProg == 128){
+      if (i < 32){
+        color_ch1 = hsv_to_rgb((i - 2) * 12, 100, amplch1);
+        color_ch2 = hsv_to_rgb((i - 2) * 12, 100, amplch2);
+        ws2812fx.setPixelColor(i - 2, color_ch1);
+        ws2812fx.setPixelColor(61 - i,color_ch2);
+      }
+      ws2812fx.show();
+    }
+    if (ModeShowProg == 129){
+
+    }
+  }
+  if (ModeShowProg == 127){
+    ws2812fx.service();
+  }
+}
+
 void delay80ns(int t) {         // Функция задержки примерно t * 80ns = 400ns (0.4 us)
   volatile uint32_t x;          // Волатильная переменная для растягивания времени (объявлена volatile, чтобы оптимизатор ее не удалил)
   for (int i = 0; i < t; i++) {
@@ -250,12 +332,6 @@ void setup() {
   //adc_init();
  // adc_set_temp_sensor_enabled(1);
   analogReadResolution(12); // Сообщим библиотеке ардуино что у нас 12bit разрешение ADC
-
-  u8g2.begin();
-  u8g2.setFont(u8g2_font_8x13B_tf);
-  u8g2.setDrawColor(1);
-  u8g2.setFontPosTop();        
-  u8g2.clearBuffer();
   
   ws2812fx.init();
   ws2812fx.setBrightness(100);
@@ -263,7 +339,12 @@ void setup() {
   //ws2812fx.setColor(0x007BFF);
   //ws2812fx.setMode(FX_MODE_STATIC);
   ws2812fx.start();
-  Serial.begin(115200);
+
+  u8g2.begin();
+  u8g2.setFont(u8g2_font_8x13_t_cyrillic);
+  u8g2.setDrawColor(1);
+  u8g2.setFontPosTop();        
+  u8g2.clearBuffer();
   u8g2.setCursor(5, 0);
   u8g2.print("Color Music 1.0");
   u8g2.drawBitmap(0, 16, 16, 48, TitleBitmap);
@@ -273,72 +354,20 @@ void setup() {
 }
 
 void loop() {
-  int amplch1 = 0;
-  int amplch2 = 0;
-  uint32_t color_ch1, color_ch2;
   calculateFFT();
   u8g2.clearBuffer();
-  //проверяем все частоты от 800гц до 19600гц с шагом 400гц
-  // i = 0 постоянная составляющая
-  // i = 1 недостаточно хорошо определяется много шума
-  //  итого 48 частот
-  for (int i = 2; i < 50; i++){
-    if (vRealCh1[i] > 200) {
-      vRealCh1[i] = vRealCh1[i] - 200;
-    } else vRealCh1[i] = 0; // Все что ниже 200 считем шумом и не учитываем в подсчетах
-    if (vRealCh2[i] > 200){
-      vRealCh2[i] = vRealCh2[i] - 200;
-    } else vRealCh2[i] = 0; // то же для второго канала
-    amplch1 = constrain(vRealCh1[i], 0, 17000);   //обрежем сигнал по амплитуде  до 17000 будем считать это максимумом
-    amplch2 = constrain(vRealCh2[i], 0, 17000);
-    amplch1 = map(amplch1, 0, 17000, 0, 100);     // переведем амплитуду в проценты яркости
-    amplch2 = map(amplch2, 0, 17000, 0, 100);
-    if ((i + 1) % 3 == 0){                        // Берем каждый третий элемент массива
-      uint8_t j = (i + 1) / 3 - 1;                // Находим знакоместо по x для вывода столбика
-      DrawColumnDisplay(j, amplch1);              // Создаем столбик для первого канала
-      DrawColumnDisplay(31-j, amplch2);         // Создаем столбик для второго канала
+  if (ModeShowProg > 126 && ModeShowProg < 130){
+    ModeShowProg = ModeShowProg + enccondition;
+    if (ModeShowProg == 130){
+      ModeShowProg = 127;
     }
-    switch (i) {
-      case 2:  {// 800гц
-        color_ch1 = hsv_to_rgb(RED_HSV, 100, amplch1);
-        color_ch2 = hsv_to_rgb(RED_HSV, 100, amplch2);
-        ws2812fx.setSegment(0, 0, 5, FX_MODE_STATIC, color_ch1, 30);
-        ws2812fx.setSegment(1, 54, 59, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        break;
-      }
-      case 6:  {//2400гц
-        color_ch1 = hsv_to_rgb(ORANGE_HSV, 100, amplch1);
-        color_ch2 = hsv_to_rgb(ORANGE_HSV, 100, amplch2);
-        ws2812fx.setSegment(2, 6, 11, FX_MODE_STATIC, color_ch1, 30);
-        ws2812fx.setSegment(3, 48, 53, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        break;
-      }
-      case 10:   {//4000гц
-        color_ch1 = hsv_to_rgb(GREEN_HSV, 100, amplch1);
-        color_ch2 = hsv_to_rgb(GREEN_HSV, 100, amplch2);
-        ws2812fx.setSegment(4, 12, 17, FX_MODE_STATIC, color_ch1, 30);
-        ws2812fx.setSegment(5, 42, 47, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        break;
-      }
-      case 16:    {//6400гц
-        color_ch1 = hsv_to_rgb(BLUE_HSV, 100, amplch1);
-        color_ch2 = hsv_to_rgb(BLUE_HSV, 100, amplch2);
-        ws2812fx.setSegment(6, 18, 23, FX_MODE_STATIC, color_ch1, 30);
-        ws2812fx.setSegment(7, 36, 41, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        break;
-      }
-      case 25:    {//10000гц
-        color_ch1 = hsv_to_rgb(VIOLET_HSV, 100, amplch1);
-        color_ch2 = hsv_to_rgb(VIOLET_HSV, 100, amplch2);
-        ws2812fx.setSegment(8, 24, 29, FX_MODE_STATIC, color_ch1, 30);
-        ws2812fx.setSegment(9, 30, 35, FX_MODE_STATIC, color_ch2, 30,REVERSE);
-        break;
-      }
-   }  
+    if (ModeShowProg == 126){
+      ModeShowProg = 129;
+    }
+    enccondition = 0;
+    Chance_ColorMusic();
   }
-  //ws2812fx.show();
   showWaveform();
-  ws2812fx.service();
   u8g2.sendBuffer();
   delay(1);  
 }  
