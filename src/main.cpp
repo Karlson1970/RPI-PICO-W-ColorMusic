@@ -76,6 +76,8 @@ double vRealCh2[SAMPLES];
 double vImagCh2[SAMPLES];
 int16_t waveCh1[SAMPLES];       // необработанные данные с аналоговых каналов 
 int16_t waveCh2[SAMPLES];
+uint16_t MaxCh1 = 0;
+uint16_t MaxCh2 = 0;
 
 // Пины энкодера
 const uint encoderPinA = 15;
@@ -214,14 +216,15 @@ uint32_t hsv_to_rgb(int h,int s,int v)
 
 //Выбор режима работы цветомузыки
 void Chance_ColorMusic(){
-  int amplch1 = 0;
-  int amplch2 = 0;
+  uint16_t amplch1 = 0;
+  uint16_t amplch2 = 0;
+  
   uint32_t color_ch1, color_ch2;
   //проверяем все частоты от 800гц до 19600гц с шагом 400гц
   // i = 0 постоянная составляющая
   // i = 1 недостаточно хорошо определяется много шума
   //итого 48 частот
-  for (int i = 2; i < 50; i++){
+  for (uint8_t i = 2; i < 50; i++){
     if (vRealCh1[i] > 200) {
       vRealCh1[i] = vRealCh1[i] - 200;
     } else vRealCh1[i] = 0; // Все что ниже 200 считем шумом и не учитываем в подсчетах
@@ -238,6 +241,7 @@ void Chance_ColorMusic(){
       DrawColumnDisplay(31-j, amplch2);         // Создаем столбик для второго канала
     }
     if (ModeShowProg == 127){
+      ws2812fx.stop();
       switch (i) {
         case 2:  {// 800гц
           color_ch1 = hsv_to_rgb(RED_HSV, 100, amplch1);
@@ -275,6 +279,7 @@ void Chance_ColorMusic(){
           break;
         }
       }
+      ws2812fx.start();
     }
     if (ModeShowProg == 128){
       if (i < 32){
@@ -283,13 +288,33 @@ void Chance_ColorMusic(){
         ws2812fx.setPixelColor(i - 2, color_ch1);
         ws2812fx.setPixelColor(61 - i,color_ch2);
       }
-      ws2812fx.show();
-    }
-    if (ModeShowProg == 129){
-
     }
   }
-  if (ModeShowProg == 127){
+    if (ModeShowProg == 129){
+      ws2812fx.stop();
+      ws2812fx.removeActiveSegment(2);
+      ws2812fx.removeActiveSegment(3);
+      ws2812fx.removeActiveSegment(4);
+      ws2812fx.removeActiveSegment(5);
+      ws2812fx.removeActiveSegment(6);
+      ws2812fx.removeActiveSegment(7);
+      ws2812fx.removeActiveSegment(8);
+      ws2812fx.removeActiveSegment(9);
+      if (MaxCh1 > 48){
+        MaxCh1 = MaxCh1 - 48;
+      } else MaxCh1 = 0;
+      if (MaxCh2 > 48){
+        MaxCh2 = MaxCh2 - 48;
+      } else MaxCh2 = 0;
+      MaxCh1 = map(MaxCh1, 0, 2000, 0, LED_COUNT / 2 - 1);
+      MaxCh2 = map(MaxCh2, 0, 2000, LED_COUNT - 1, LED_COUNT / 2);
+        ws2812fx.setSegment(0, 0, MaxCh1, FX_MODE_STATIC, RED, 30);
+      ws2812fx.setSegment(1, MaxCh2, LED_COUNT-1, FX_MODE_STATIC, RED, 30, REVERSE);
+      ws2812fx.start();
+      MaxCh1 = 0;
+      MaxCh2 = 0;
+    }
+  if (ModeShowProg == 127 || ModeShowProg == 129){
     ws2812fx.service();
   }
 }
@@ -308,10 +333,14 @@ void calculateFFT() {
     delay80ns(50);                                                    //задержка 0.4 микросекунды
   }
   for (int i = 0; i < SAMPLES; i++) {
-    vRealCh1[i] = waveCh1[i] - 2048;                                  // поскольку на АЦП сигнал подается со смещением то 0 находится на отметке 2048
-    vRealCh2[i] = waveCh2[i] - 2048;
+    int16_t TempCh1 = waveCh1[i] - 2048;
+    int16_t TempCh2 = waveCh2[i] - 2048;
+    vRealCh1[i] = TempCh1;                                  // поскольку на АЦП сигнал подается со смещением то 0 находится на отметке 2048
+    vRealCh2[i] = TempCh2;
     vImagCh1[i] = 0;
     vImagCh2[i] = 0;
+    if (abs(TempCh1) > MaxCh1) MaxCh1 = abs(TempCh1); 
+    if (abs(TempCh2) > MaxCh2) MaxCh2 = abs(TempCh2); 
   }  
   FFT.Windowing(vRealCh1, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD); // применим окно Хэмминга к введенным данным VRealCh1.
   FFT.Windowing(vRealCh2, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD); // тоже для 2 канала
@@ -366,6 +395,10 @@ void loop() {
     }
     enccondition = 0;
     Chance_ColorMusic();
+    if (ModeShowProg == 128){
+        ws2812fx.show();
+        delay(1);
+    }
   }
   showWaveform();
   u8g2.sendBuffer();
