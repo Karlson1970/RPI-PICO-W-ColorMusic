@@ -215,7 +215,7 @@ uint32_t hsv_to_rgb(int h,int s,int v)
 }
 
 //Выбор режима работы цветомузыки
-void Chance_ColorMusic(){
+void Change_ColorMusic(){
   uint16_t amplch1 = 0;
   uint16_t amplch2 = 0;
   
@@ -241,7 +241,6 @@ void Chance_ColorMusic(){
       DrawColumnDisplay(31-j, amplch2);         // Создаем столбик для второго канала
     }
     if (ModeShowProg == 127){
-      ws2812fx.stop();
       switch (i) {
         case 2:  {// 800гц
           color_ch1 = hsv_to_rgb(RED_HSV, 100, amplch1);
@@ -279,7 +278,6 @@ void Chance_ColorMusic(){
           break;
         }
       }
-      ws2812fx.start();
     }
     if (ModeShowProg == 128){
       if (i < 32){
@@ -290,33 +288,23 @@ void Chance_ColorMusic(){
       }
     }
   }
-    if (ModeShowProg == 129){
-      ws2812fx.stop();
-      ws2812fx.removeActiveSegment(2);
-      ws2812fx.removeActiveSegment(3);
-      ws2812fx.removeActiveSegment(4);
-      ws2812fx.removeActiveSegment(5);
-      ws2812fx.removeActiveSegment(6);
-      ws2812fx.removeActiveSegment(7);
-      ws2812fx.removeActiveSegment(8);
-      ws2812fx.removeActiveSegment(9);
-      if (MaxCh1 > 48){
-        MaxCh1 = MaxCh1 - 48;
-      } else MaxCh1 = 0;
-      if (MaxCh2 > 48){
-        MaxCh2 = MaxCh2 - 48;
-      } else MaxCh2 = 0;
-      MaxCh1 = map(MaxCh1, 0, 2000, 0, LED_COUNT / 2 - 1);
-      MaxCh2 = map(MaxCh2, 0, 2000, LED_COUNT - 1, LED_COUNT / 2);
-        ws2812fx.setSegment(0, 0, MaxCh1, FX_MODE_STATIC, RED, 30);
-      ws2812fx.setSegment(1, MaxCh2, LED_COUNT-1, FX_MODE_STATIC, RED, 30, REVERSE);
-      ws2812fx.start();
-      MaxCh1 = 0;
-      MaxCh2 = 0;
-    }
-  if (ModeShowProg == 127 || ModeShowProg == 129){
-    ws2812fx.service();
+  if (ModeShowProg == 129){
+    ws2812fx.stop();
+    if (MaxCh1 > 48){
+      MaxCh1 = MaxCh1 - 48;
+    } else MaxCh1 = 0;
+    if (MaxCh2 > 48){
+      MaxCh2 = MaxCh2 - 48;
+    } else MaxCh2 = 0;
+    MaxCh1 = map(MaxCh1, 0, 2000, 0, LED_COUNT / 2 - 1);
+    MaxCh2 = map(MaxCh2, 0, 2000, LED_COUNT - 1, LED_COUNT / 2);
+    ws2812fx.setSegment(0, 0, MaxCh1, FX_MODE_RUNNING_LIGHTS, COLORS(RED, YELLOW, GREEN), 30);
+    ws2812fx.setSegment(1, MaxCh2, LED_COUNT-1, FX_MODE_RUNNING_LIGHTS, COLORS(RED, YELLOW, GREEN), 30, REVERSE);
+    MaxCh1 = 0;
+    MaxCh2 = 0;
+    ws2812fx.start();
   }
+  if (ModeShowProg == 127 || ModeShowProg == 129) ws2812fx.service();
 }
 
 void delay80ns(int t) {         // Функция задержки примерно t * 80ns = 400ns (0.4 us)
@@ -385,19 +373,27 @@ void setup() {
 void loop() {
   calculateFFT();
   u8g2.clearBuffer();
+  if (enccondition != 0){
+    ws2812fx.removeActiveSegment(0);
+    ws2812fx.removeActiveSegment(1);
+    ws2812fx.removeActiveSegment(2);
+    ws2812fx.removeActiveSegment(3);
+    ws2812fx.removeActiveSegment(4);
+    ws2812fx.removeActiveSegment(5);
+    ws2812fx.removeActiveSegment(6);
+    ws2812fx.removeActiveSegment(7);
+    ws2812fx.removeActiveSegment(8);
+    ws2812fx.removeActiveSegment(9);
+  }
   if (ModeShowProg > 126 && ModeShowProg < 130){
     ModeShowProg = ModeShowProg + enccondition;
-    if (ModeShowProg == 130){
-      ModeShowProg = 127;
-    }
-    if (ModeShowProg == 126){
-      ModeShowProg = 129;
-    }
+    if (ModeShowProg == 130)  ModeShowProg = 127;
+    if (ModeShowProg == 126)  ModeShowProg = 129;
     enccondition = 0;
-    Chance_ColorMusic();
+    Change_ColorMusic();
     if (ModeShowProg == 128){
-        ws2812fx.show();
-        delay(1);
+      ws2812fx.show();
+      delay(1);
     }
   }
   showWaveform();
